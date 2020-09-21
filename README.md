@@ -15,7 +15,7 @@ To run an experiment with CIFAR10/100 or Tiny Imagenet datasets, run:
 
     python train_cifar_tiny_imagenet.py --network_name vgg19 --pruning_factor 0.01 --prune_method 1 --dataset CIFAR10 --num_steps 60 --mode exp --num_batches 1
     
-Alternatively, you can change the `--dataset` option with `CIFAR100` or `tiny_imagenet`. You may also change the architecture and use `resnet50` for instance. 
+Alternatively, you can change the `--dataset` option with `CIFAR100` or `tiny_imagenet`. Bear in mind that for `CIFAR100` you will need to set `--num_batches` to 10 and for `tiny_imagenet` to 20. You may also change the architecture and use `resnet50` for instance. 
 
 ### Imagenet
 To run an experiment with Imagenet run:
