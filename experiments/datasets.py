@@ -78,7 +78,7 @@ def get_cifar_train_valid_loader(batch_size,
         ])
 
     # load the dataset
-    data_dir = './data'
+    data_dir = '~/pruning/data'
 
     if dataset_name == 'CIFAR10':
         train_dataset = torchvision.datasets.CIFAR10(
@@ -164,7 +164,7 @@ def get_cifar_test_loader(batch_size,
     ])
 
     # load the dataset
-    data_dir = './data'
+    data_dir = '~/pruning/data'
     if dataset_name == 'CIFAR10':
         dataset = torchvision.datasets.CIFAR10(
             root=data_dir, train=False,

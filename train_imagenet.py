@@ -92,10 +92,11 @@ parser.add_argument("--network_name", type=str, default='resnet50', dest="networ
 parser.add_argument("--pruning_factor", type=float, default=0.1, dest="pruning_factor",
                     help='Percentage of connections retained')
 
-parser.add_argument("--prune_method", type=int, default=1, dest="prune_method",
+parser.add_argument("--prune_method", type=int, default=3, dest="prune_method",
                         help="""Which pruning method to use:
-                                1->FORCE (default)
-                                2->GRASP-It""")
+                                1->Iter SNIP
+                                2->GRASP-It
+                                3->FORCE (default). """)
 
 parser.add_argument("--num_steps", type=int, default=10,
                     help='Number of steps to use with iterative pruning')

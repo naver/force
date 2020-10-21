@@ -2,11 +2,14 @@ import torch.nn as nn
 import numpy as np
 # from IPython import embed
 
-def apply_prune_mask(net, keep_masks):
+def apply_prune_mask(net, keep_masks, apply_hooks=True):
     """
     Function that takes a network and a list of masks and applies it to the relevant layers.
     mask[i] == 0 --> Prune parameter
     mask[i] == 1 --> Keep parameter
+    
+    If apply_hooks == False, then set weight to 0 but do not block the gradient.
+    This is used for FORCE algorithm that sparsifies the net instead of pruning.
     """
     
     # Before I can zip() layers and pruning masks I need to make sure they match
@@ -33,8 +36,10 @@ def apply_prune_mask(net, keep_masks):
             return hook
 
         # Step 1: Set the masked weights to zero (Biases are ignored)
-        # Step 2: Make sure their gradients remain zero
         layer.weight.data[keep_mask == 0.] = 0.
-        hook_handlers.append(layer.weight.register_hook(hook_factory(keep_mask)))
+        
+        # Step 2: Make sure their gradients remain zero (not with FORCE)
+        if apply_hooks:
+            hook_handlers.append(layer.weight.register_hook(hook_factory(keep_mask)))
         
     return hook_handlers

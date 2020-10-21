@@ -63,7 +63,8 @@ def get_average_gradients(net, train_dataloader, device, num_batches=-1):
     return avg_gradients
 
     
-def get_average_saliencies(net, train_dataloader, device, prune_method=1, num_batches=-1):
+def get_average_saliencies(net, train_dataloader, device, prune_method=3, num_batches=-1,
+                           original_weights=None):
     """
     Get saliencies with averaged gradients.
     
@@ -71,19 +72,20 @@ def get_average_saliencies(net, train_dataloader, device, prune_method=1, num_ba
                  When set to -1, uses the whole training set.
     
     prune_method: Which method to use to prune the layers, refer to https://arxiv.org/abs/2006.09081.
-                   1: Use FORCE (default).
+                   1: Use Iter SNIP.
                    2: Use GRASP-It.
+                   3: Use FORCE (default).
     
     Returns a list of tensors with saliencies for each weight.
     """
      
-    def pruning_criteria(number):
-        if number == 1:
-            # FORCE method (which approximates to using SNIP at each iteration)
-            result = torch.abs(layer_weight * layer_weight_grad)
-        elif number == 2:
-            # GRASP-It method (which corresponds to applying the gradient approximation iteratively)
+    def pruning_criteria(method):
+        if method == 2:
+            # GRASP-It method 
             result = layer_weight_grad**2 # Custom gradient norm approximation
+        else:
+            # FORCE / Iter SNIP method
+            result = torch.abs(layer_weight * layer_weight_grad)
         return result
 
     gradients = get_average_gradients(net, train_dataloader, device, num_batches)
@@ -91,7 +93,10 @@ def get_average_saliencies(net, train_dataloader, device, prune_method=1, num_ba
     idx = 0
     for layer in net.modules():
         if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
-            layer_weight = layer.weight
+            if prune_method == 3:
+                layer_weight = original_weights[idx]
+            else:
+                layer_weight = layer.weight
             layer_weight_grad = gradients[idx]
             idx += 1
             saliency.append(pruning_criteria(prune_method))
@@ -119,7 +124,8 @@ def get_mask(saliency, pruning_factor):
         keep_masks.append((m >= acceptable_score).float())
     return keep_masks
 
-def iterative_pruning(net, train_dataloader, device, pruning_factor=0.1, prune_method=1, num_steps=10,
+def iterative_pruning(ori_net, train_dataloader, device, pruning_factor=0.1,
+                      prune_method=3, num_steps=10,
                       mode='exp', num_batches=1):
     """
     Function to gradually remove weights from a network, recomputing the saliency at each step.
@@ -127,8 +133,9 @@ def iterative_pruning(net, train_dataloader, device, pruning_factor=0.1, prune_m
     pruning_factor: Fraction of remaining weights (globally) after pruning. 
     
     prune_method: Which method to use to prune the layers, refer to https://arxiv.org/abs/2006.09081.
-                   1: Use FORCE (default).
+                   1: Use Iter SNIP.
                    2: Use GRASP-It.
+                   3: Use FORCE (default).
                    
     num_steps: Number of iterations to do when pruning progrssively (should be >= 1).  
                    
@@ -139,12 +146,21 @@ def iterative_pruning(net, train_dataloader, device, pruning_factor=0.1, prune_m
                  
     Returns a list of binary tensors which correspond to the final pruning mask.
     """
-    # Let's create a fresh copy of the network so that we're not worried about
-    # affecting the actual training-phase
-    net = copy.deepcopy(net)
-    percentages = []
+    # Let's create a copy of the network to make sure we don't affect the training later
+    net = copy.deepcopy(ori_net)
     
-    # Choose a decay mode for sparsity
+    if prune_method == 3:
+        # If we want to apply FORCE we need to save the original (dense) weights
+        # to compute the saliency of sparsified connections.
+        original_weights = []
+        for layer in net.modules():
+            if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
+                original_weights.append(layer.weight.detach())
+    else:
+        original_weights = None
+        
+    # Choose a decay mode for sparsity (exponential should be used unless you know what you
+    # are doing)
     if mode == 'linear':
         pruning_steps = [1 - ((x + 1) * (1 - pruning_factor) / num_steps) for x in range(num_steps)]
         
@@ -157,12 +173,14 @@ def iterative_pruning(net, train_dataloader, device, pruning_factor=0.1, prune_m
     for perc in pruning_steps:
         saliency = []
         saliency = get_average_saliencies(net, train_dataloader, device,
-                                          prune_method=prune_method, num_batches=num_batches)
+                                          prune_method=prune_method,
+                                          num_batches=num_batches,
+                                          original_weights=original_weights)
         torch.cuda.empty_cache()
         
         # Make sure all saliencies of previously deleted weights is minimum so they do not 
         # get picked again.
-        if mask is not None:
+        if mask is not None and prune_method < 3:
             min_saliency = get_minimum_saliency(saliency)
             for ii in range(len(saliency)):
                 saliency[ii][mask[ii] == 0.] = min_saliency
@@ -170,9 +188,17 @@ def iterative_pruning(net, train_dataloader, device, pruning_factor=0.1, prune_m
         if hook_handlers is not None:
             for h in hook_handlers:
                 h.remove()
+                
         mask = []
         mask = get_mask(saliency, perc)
-        hook_handlers = apply_prune_mask(net, mask)
+        
+        # To use FORCE, go back to the dense network so unmasked
+        # weights can recover
+        if prune_method == 3:
+            net = copy.deepcopy(ori_net)
+            apply_prune_mask(net, mask, apply_hooks=False)
+        else:   
+            hook_handlers = apply_prune_mask(net, mask, apply_hooks=True)
         
         p = check_global_pruning(mask)
         print(f'Global pruning {round(float(p),5)}')

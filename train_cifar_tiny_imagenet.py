@@ -30,10 +30,11 @@ def parseArgs():
     parser.add_argument("--pruning_factor", type=float, default=0.01, dest="pruning_factor",
                         help='Fraction of connections after pruning')
     
-    parser.add_argument("--prune_method", type=int, default=1, dest="prune_method",
+    parser.add_argument("--prune_method", type=int, default=3, dest="prune_method",
                         help="""Which pruning method to use:
-                                1->FORCE (default)
-                                2->GRASP-It""")
+                                1->Iter SNIP
+                                2->GRASP-It
+                                3->FORCE (default). """)
     
     parser.add_argument("--dataset", type=str, default='CIFAR10',
                         dest="dataset_name", help='Dataset to train on')
